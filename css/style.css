@@ -331,15 +331,22 @@ body {
   border-left: 3px solid var(--warning);
 }
 .explanation-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--warning);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .explanation-text {
   font-size: 14px;
   color: #666;
-  line-height: 1.6;
+  line-height: 1.7;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.explanation-text br {
+  display: block;
+  margin: 6px 0;
+  content: "";
 }
 
 /* ========== 底部导航 ========== */
