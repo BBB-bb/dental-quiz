@@ -1,27 +1,34 @@
-// 口腔执业医师刷题 - 主应用逻辑 (v2)
+// 口腔执业医师刷题 - 主应用逻辑 (v3 - 动态题库版)
+
+// ========== 配置 ==========
+const BANK_URL = './data/bank.json';
+const STORAGE_KEY = 'dental_quiz_v3';
 
 // ========== 状态管理 ==========
-const STORAGE_KEY = 'dental_quiz_data';
 let state = {
+  answered: {},     // {questionId: selectedOption} - 所有做过的题
   wrongBook: [],    // [{questionId, chapter}]
   stats: { total: 0, correct: 0 },
   history: []       // [{date, score, chapter, total, correct}]
 };
 
+let questionBank = [];  // 从后台加载的完整题库
+
 let currentQuiz = {
   mode: '',
   questions: [],
   currentIndex: 0,
-  answers: {},      // {questionId: selectedOption}
+  answers: {},
   startTime: null,
   chapter: '',
   submitted: false
 };
 
 // ========== 初始化 ==========
-function init() {
+async function init() {
   loadState();
   updateHomeStats();
+  await loadQuestionBank();
 }
 
 function loadState() {
@@ -35,6 +42,28 @@ function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch(e) {}
+}
+
+// ========== 从后台加载题库 ==========
+async function loadQuestionBank() {
+  try {
+    const resp = await fetch(BANK_URL + '?t=' + Date.now());
+    if (!resp.ok) throw new Error('加载失败');
+    questionBank = await resp.json();
+    console.log('题库加载成功:', questionBank.length, '题');
+    updateBankInfo();
+  } catch(e) {
+    console.error('题库加载失败:', e);
+    // 如果加载失败，尝试用内嵌题库
+    if (typeof QUESTIONS !== 'undefined') {
+      questionBank = QUESTIONS;
+    }
+  }
+}
+
+function updateBankInfo() {
+  const el = document.getElementById('bank-info');
+  if (el) el.textContent = '题库: ' + questionBank.length + '题';
 }
 
 // ========== 页面切换 ==========
@@ -52,7 +81,7 @@ function updateHomeStats() {
   document.getElementById('stat-wrong').textContent = state.wrongBook.length;
 }
 
-// ========== 章节练习 ==========
+// ========== 章节列表 ==========
 function startChapter() {
   const chapters = getChapters();
   const list = document.getElementById('chapter-list');
@@ -69,29 +98,36 @@ function startChapter() {
 
 function getChapters() {
   const chapters = {};
-  QUESTIONS.forEach(q => {
+  questionBank.forEach(q => {
     if (!chapters[q.chapter]) chapters[q.chapter] = 0;
     chapters[q.chapter]++;
   });
   return Object.entries(chapters).map(([name, count]) => ({ name, count }));
 }
 
+// ========== 章节练习（去重，每次新题） ==========
 function startChapterQuiz(chapter) {
-  const questions = QUESTIONS.filter(q => q.chapter === chapter);
-  startQuiz('chapter', questions, chapter);
+  const all = questionBank.filter(q => q.chapter === chapter);
+  const unansered = getUnanseredQuestions(all);
+  // 如果没做过的题不够，就用全部题
+  const pool = unansered.length >= 15 ? unansered : all;
+  const shuffled = shuffleArray(pool).slice(0, Math.min(15, pool.length));
+  startQuiz('chapter', shuffled, chapter);
 }
 
-// ========== 随机刷题 ==========
+// ========== 随机刷题（去重） ==========
 function startRandom() {
-  const count = Math.min(20, QUESTIONS.length);
-  const shuffled = [...QUESTIONS].sort(() => Math.random() - 0.5).slice(0, count);
+  const unansered = getUnanseredQuestions(questionBank);
+  const pool = unansered.length >= 20 ? unansered : questionBank;
+  const shuffled = shuffleArray(pool).slice(0, Math.min(20, pool.length));
   startQuiz('random', shuffled, '随机刷题');
 }
 
-// ========== 模拟考试 ==========
+// ========== 模拟考试（去重） ==========
 function startExam() {
-  const count = Math.min(50, QUESTIONS.length);
-  const shuffled = [...QUESTIONS].sort(() => Math.random() - 0.5).slice(0, count);
+  const unansered = getUnanseredQuestions(questionBank);
+  const pool = unansered.length >= 50 ? unansered : questionBank;
+  const shuffled = shuffleArray(pool).slice(0, Math.min(50, pool.length));
   startQuiz('exam', shuffled, '模拟考试');
 }
 
@@ -102,12 +138,25 @@ function redoWrong() {
     return;
   }
   const wrongIds = state.wrongBook.map(w => w.questionId);
-  const questions = QUESTIONS.filter(q => wrongIds.includes(q.id));
-  startQuiz('wrong', questions, '错题重做');
+  const questions = questionBank.filter(q => wrongIds.includes(q.id));
+  startQuiz('wrong', shuffleArray(questions), '错题重做');
 }
 
-function redoAllWrong() {
-  redoWrong();
+function redoAllWrong() { redoWrong(); }
+
+// ========== 获取未做过的题 ==========
+function getUnanseredQuestions(pool) {
+  return pool.filter(q => state.answered[q.id] === undefined);
+}
+
+// ========== 随机打乱 ==========
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 // ========== 做题核心 ==========
@@ -146,6 +195,8 @@ function startTimer() {
   }, 1000);
 }
 
+const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+
 function renderQuestion() {
   const q = currentQuiz.questions[currentQuiz.currentIndex];
   const idx = currentQuiz.currentIndex;
@@ -156,7 +207,6 @@ function renderQuestion() {
   document.getElementById('question-type').textContent = q.chapter || '选择题';
   document.getElementById('question-text').textContent = (idx + 1) + '. ' + q.question;
   
-  const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
   const selected = currentQuiz.answers[q.id];
   const answered = selected !== undefined;
   
@@ -192,12 +242,10 @@ function renderQuestion() {
   const allAnswered = currentQuiz.questions.every(q => currentQuiz.answers[q.id] !== undefined);
   
   if (allAnswered && !currentQuiz.submitted) {
-    // 所有题都答完了，显示提交按钮
     document.getElementById('btn-next').style.display = 'none';
     document.getElementById('btn-submit').style.display = 'block';
     document.getElementById('btn-submit').textContent = '查看结果';
   } else if (idx === total - 1) {
-    // 最后一题但还没全答完
     document.getElementById('btn-next').style.display = 'none';
     document.getElementById('btn-submit').style.display = 'block';
     document.getElementById('btn-submit').textContent = '提交';
@@ -207,35 +255,32 @@ function renderQuestion() {
   }
 }
 
-const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
-
 function selectOption(qId, optionIndex) {
   if (currentQuiz.answers[qId] !== undefined) return;
   if (currentQuiz.submitted) return;
   
   currentQuiz.answers[qId] = optionIndex;
   
-  // 立即记录错题到错题本
+  // 记录到全局已做题库
+  state.answered[qId] = optionIndex;
+  
+  // 立即记录错题
   const q = currentQuiz.questions.find(q => q.id === qId);
   if (q && optionIndex !== q.answer) {
     const exists = state.wrongBook.find(w => w.questionId === qId);
     if (!exists) {
       state.wrongBook.push({ questionId: qId, chapter: q.chapter || '未分类' });
-      saveState();
-      updateHomeStats();
     }
   }
   
+  saveState();
   renderQuestion();
   
-  // 检查是否全部答完，自动跳到结果
+  // 全部答完自动跳结果
   const allAnswered = currentQuiz.questions.every(q => currentQuiz.answers[q.id] !== undefined);
   if (allAnswered && !currentQuiz.submitted) {
-    // 延迟1.5秒自动提交，让用户看到最后一题的对错
     setTimeout(() => {
-      if (!currentQuiz.submitted) {
-        submitQuiz();
-      }
+      if (!currentQuiz.submitted) submitQuiz();
     }, 1500);
   }
 }
@@ -257,17 +302,15 @@ function prevQuestion() {
 function confirmQuit() {
   clearInterval(timerInterval);
   
-  // 退出时也保存已做的统计
+  // 退出时保存已做统计
   const answered = Object.keys(currentQuiz.answers).length;
   if (answered > 0) {
-    // 计算已答题的正确数
     let correct = 0;
     currentQuiz.questions.forEach(q => {
       if (currentQuiz.answers[q.id] !== undefined && currentQuiz.answers[q.id] === q.answer) {
         correct++;
       }
     });
-    
     state.stats.total += answered;
     state.stats.correct += correct;
     saveState();
@@ -292,7 +335,7 @@ function submitQuiz() {
   
   questions.forEach(q => {
     const userAns = answers[q.id];
-    if (userAns === undefined) return; // 跳过未答题
+    if (userAns === undefined) return;
     
     const ch = q.chapter || '未分类';
     if (!chapterStats[ch]) chapterStats[ch] = { total: 0, correct: 0 };
@@ -304,7 +347,7 @@ function submitQuiz() {
     } else {
       wrong++;
       wrongQuestions.push(q);
-      // 确保错题已加入错题本（selectOption里已经加了，这里再确认一次）
+      // 确保错题已记录
       const exists = state.wrongBook.find(w => w.questionId === q.id);
       if (!exists) {
         state.wrongBook.push({ questionId: q.id, chapter: ch });
@@ -316,11 +359,9 @@ function submitQuiz() {
   const score = total > 0 ? Math.round(correct / total * 100) : 0;
   const elapsed = Math.floor((Date.now() - currentQuiz.startTime) / 1000);
   
-  // 更新统计
   state.stats.total += total;
   state.stats.correct += correct;
   
-  // 保存历史
   state.history.push({
     date: new Date().toISOString(),
     score,
@@ -330,8 +371,6 @@ function submitQuiz() {
   });
   
   saveState();
-  
-  // 显示结果
   showResult(score, correct, wrong, elapsed, wrongQuestions, chapterStats);
 }
 
@@ -356,16 +395,16 @@ function showResult(score, correct, wrong, elapsed, wrongQuestions, chapterStats
       <span class="weak-name">${w.name}</span>
       <span class="weak-rate">${Math.round(w.rate * 100)}%</span>
     </div>
-  `).join('') : '<div class="empty-state"><div class="empty-text">全部掌握，没有薄弱点！</div></div>';
+  `).join('') : '<div class="empty-state"><div class="empty-text">全部掌握！</div></div>';
   
   // 错题列表
   const wrongList = document.getElementById('wrong-list');
   wrongList.innerHTML = wrongQuestions.length > 0 ? wrongQuestions.map(q => `
-    <div class="wrong-item" onclick="showWrongDetail(${q.id})">
+    <div class="wrong-item">
       <div class="wrong-q">${q.question}</div>
       <div class="wrong-ans">
-        <span class="label">你的答案：</span><span class="your">${letters[currentQuiz.answers[q.id]]}</span>
-        <span class="label" style="margin-left:10px">正确答案：</span><span class="right">${letters[q.answer]}</span>
+        <span class="label">你的：</span><span class="your">${letters[currentQuiz.answers[q.id]]}</span>
+        <span class="label" style="margin-left:10px">正确：</span><span class="right">${letters[q.answer]}</span>
       </div>
     </div>
   `).join('') : '<div class="empty-state"><div class="empty-text">全部答对！</div></div>';
@@ -388,7 +427,6 @@ function showWrongBook() {
   document.getElementById('wrong-actions').style.display = 'block';
   document.getElementById('wrong-count').textContent = state.wrongBook.length + ' 题';
   
-  // 章节筛选
   const chapters = [...new Set(state.wrongBook.map(w => w.chapter))];
   document.getElementById('wrong-chapters').innerHTML = chapters.map(ch => 
     `<button class="filter-btn" onclick="filterWrong('${ch}', this)">${ch}</button>`
@@ -412,7 +450,7 @@ function renderWrongList(chapter) {
   
   const list = document.getElementById('wrong-book-list');
   list.innerHTML = wrongItems.map(w => {
-    const q = QUESTIONS.find(q => q.id === w.questionId);
+    const q = questionBank.find(q => q.id === w.questionId);
     if (!q) return '';
     return `<div class="wrong-book-item">
       <div class="wrong-book-q">${q.question}</div>
@@ -425,12 +463,6 @@ function renderWrongList(chapter) {
       </div>
     </div>`;
   }).join('');
-}
-
-function showWrongDetail(qId) {
-  const q = QUESTIONS.find(q => q.id === qId);
-  if (!q) return;
-  alert(`题目：${q.question}\n\n正确答案：${letters[q.answer]}. ${q.options[q.answer]}\n\n${q.explanation ? '解析：' + q.explanation : ''}`);
 }
 
 // ========== 启动 ==========
