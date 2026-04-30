@@ -1,21 +1,21 @@
-// 口腔执业医师刷题 - 主应用逻辑
+// 口腔执业医师刷题 - 主应用逻辑 (v2)
 
 // ========== 状态管理 ==========
 const STORAGE_KEY = 'dental_quiz_data';
 let state = {
-  answers: {},      // {questionId: selectedOption}
-  wrongBook: [],    // [{questionId, chapter, ...}]
+  wrongBook: [],    // [{questionId, chapter}]
   stats: { total: 0, correct: 0 },
-  history: []       // [{date, score, chapter, ...}]
+  history: []       // [{date, score, chapter, total, correct}]
 };
 
 let currentQuiz = {
-  mode: '',         // 'chapter' | 'random' | 'exam' | 'wrong'
+  mode: '',
   questions: [],
   currentIndex: 0,
-  answers: {},
+  answers: {},      // {questionId: selectedOption}
   startTime: null,
-  chapter: ''
+  chapter: '',
+  submitted: false
 };
 
 // ========== 初始化 ==========
@@ -122,12 +122,14 @@ function startQuiz(mode, questions, title) {
     currentIndex: 0,
     answers: {},
     startTime: Date.now(),
-    chapter: title
+    chapter: title,
+    submitted: false
   };
   document.getElementById('quiz-title').textContent = title;
   document.getElementById('quiz-total').textContent = questions.length;
   document.getElementById('quiz-timer').textContent = mode === 'exam' ? '00:00' : '';
   document.getElementById('btn-submit').style.display = 'none';
+  document.getElementById('btn-next').style.display = 'block';
   showPage('quiz');
   renderQuestion();
   if (mode === 'exam') startTimer();
@@ -188,19 +190,54 @@ function renderQuestion() {
   document.getElementById('btn-prev').style.visibility = idx > 0 ? 'visible' : 'hidden';
   
   const allAnswered = currentQuiz.questions.every(q => currentQuiz.answers[q.id] !== undefined);
-  if (idx === total - 1 && allAnswered) {
+  
+  if (allAnswered && !currentQuiz.submitted) {
+    // 所有题都答完了，显示提交按钮
     document.getElementById('btn-next').style.display = 'none';
     document.getElementById('btn-submit').style.display = 'block';
+    document.getElementById('btn-submit').textContent = '查看结果';
+  } else if (idx === total - 1) {
+    // 最后一题但还没全答完
+    document.getElementById('btn-next').style.display = 'none';
+    document.getElementById('btn-submit').style.display = 'block';
+    document.getElementById('btn-submit').textContent = '提交';
   } else {
     document.getElementById('btn-next').style.display = 'block';
     document.getElementById('btn-submit').style.display = 'none';
   }
 }
 
+const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+
 function selectOption(qId, optionIndex) {
   if (currentQuiz.answers[qId] !== undefined) return;
+  if (currentQuiz.submitted) return;
+  
   currentQuiz.answers[qId] = optionIndex;
+  
+  // 立即记录错题到错题本
+  const q = currentQuiz.questions.find(q => q.id === qId);
+  if (q && optionIndex !== q.answer) {
+    const exists = state.wrongBook.find(w => w.questionId === qId);
+    if (!exists) {
+      state.wrongBook.push({ questionId: qId, chapter: q.chapter || '未分类' });
+      saveState();
+      updateHomeStats();
+    }
+  }
+  
   renderQuestion();
+  
+  // 检查是否全部答完，自动跳到结果
+  const allAnswered = currentQuiz.questions.every(q => currentQuiz.answers[q.id] !== undefined);
+  if (allAnswered && !currentQuiz.submitted) {
+    // 延迟1.5秒自动提交，让用户看到最后一题的对错
+    setTimeout(() => {
+      if (!currentQuiz.submitted) {
+        submitQuiz();
+      }
+    }, 1500);
+  }
 }
 
 function nextQuestion() {
@@ -218,19 +255,32 @@ function prevQuestion() {
 }
 
 function confirmQuit() {
-  if (Object.keys(currentQuiz.answers).length > 0) {
-    if (confirm('确定退出吗？当前进度不会保存。')) {
-      clearInterval(timerInterval);
-      showPage('home');
-    }
-  } else {
-    clearInterval(timerInterval);
-    showPage('home');
+  clearInterval(timerInterval);
+  
+  // 退出时也保存已做的统计
+  const answered = Object.keys(currentQuiz.answers).length;
+  if (answered > 0) {
+    // 计算已答题的正确数
+    let correct = 0;
+    currentQuiz.questions.forEach(q => {
+      if (currentQuiz.answers[q.id] !== undefined && currentQuiz.answers[q.id] === q.answer) {
+        correct++;
+      }
+    });
+    
+    state.stats.total += answered;
+    state.stats.correct += correct;
+    saveState();
+    updateHomeStats();
   }
+  
+  showPage('home');
 }
 
 // ========== 提交判分 ==========
 function submitQuiz() {
+  if (currentQuiz.submitted) return;
+  currentQuiz.submitted = true;
   clearInterval(timerInterval);
   
   const questions = currentQuiz.questions;
@@ -242,6 +292,8 @@ function submitQuiz() {
   
   questions.forEach(q => {
     const userAns = answers[q.id];
+    if (userAns === undefined) return; // 跳过未答题
+    
     const ch = q.chapter || '未分类';
     if (!chapterStats[ch]) chapterStats[ch] = { total: 0, correct: 0 };
     chapterStats[ch].total++;
@@ -252,7 +304,7 @@ function submitQuiz() {
     } else {
       wrong++;
       wrongQuestions.push(q);
-      // 加入错题本
+      // 确保错题已加入错题本（selectOption里已经加了，这里再确认一次）
       const exists = state.wrongBook.find(w => w.questionId === q.id);
       if (!exists) {
         state.wrongBook.push({ questionId: q.id, chapter: ch });
@@ -260,11 +312,12 @@ function submitQuiz() {
     }
   });
   
-  const score = Math.round(correct / questions.length * 100);
+  const total = correct + wrong;
+  const score = total > 0 ? Math.round(correct / total * 100) : 0;
   const elapsed = Math.floor((Date.now() - currentQuiz.startTime) / 1000);
   
   // 更新统计
-  state.stats.total += questions.length;
+  state.stats.total += total;
   state.stats.correct += correct;
   
   // 保存历史
@@ -272,7 +325,7 @@ function submitQuiz() {
     date: new Date().toISOString(),
     score,
     chapter: currentQuiz.chapter,
-    total: questions.length,
+    total,
     correct
   });
   
@@ -320,8 +373,6 @@ function showResult(score, correct, wrong, elapsed, wrongQuestions, chapterStats
   updateHomeStats();
   showPage('result');
 }
-
-const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 // ========== 错题本 ==========
 function showWrongBook() {
