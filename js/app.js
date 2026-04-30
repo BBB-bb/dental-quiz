@@ -232,7 +232,9 @@ function renderQuestion() {
   if (answered && q.explanation) {
     const expDiv = document.createElement('div');
     expDiv.className = 'explanation';
-    expDiv.innerHTML = `<div class="explanation-title">解析</div><div class="explanation-text">${q.explanation}</div>`;
+    // 将换行符转换为HTML换行
+    const formattedExplanation = q.explanation.replace(/\n/g, '<br>');
+    expDiv.innerHTML = `<div class="explanation-title">详细解析</div><div class="explanation-text">${formattedExplanation}</div>`;
     document.getElementById('question-card').appendChild(expDiv);
   }
   
