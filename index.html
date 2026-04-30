@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>口腔执业医师刷题</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 首页 -->
+    <div id="page-home" class="page active">
+      <div class="header">
+        <h1>口腔执业医师</h1>
+        <p class="subtitle">刷题练习</p>
+      </div>
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-num" id="stat-total">0</span>
+          <span class="stat-label">已做题数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-num" id="stat-correct">0%</span>
+          <span class="stat-label">正确率</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-num" id="stat-wrong">0</span>
+          <span class="stat-label">错题数</span>
+        </div>
+      </div>
+      <div class="menu-list">
+        <div class="menu-card" onclick="startChapter()">
+          <div class="menu-icon">📚</div>
+          <div class="menu-info">
+            <div class="menu-title">章节练习</div>
+            <div class="menu-desc">按知识点分类刷题</div>
+          </div>
+          <div class="menu-arrow">›</div>
+        </div>
+        <div class="menu-card" onclick="startRandom()">
+          <div class="menu-icon">🎲</div>
+          <div class="menu-info">
+            <div class="menu-title">随机刷题</div>
+            <div class="menu-desc">随机抽取题目练习</div>
+          </div>
+          <div class="menu-arrow">›</div>
+        </div>
+        <div class="menu-card" onclick="startExam()">
+          <div class="menu-icon">📝</div>
+          <div class="menu-info">
+            <div class="menu-title">模拟考试</div>
+            <div class="menu-desc">限时模拟真实考试</div>
+          </div>
+          <div class="menu-arrow">›</div>
+        </div>
+        <div class="menu-card" onclick="showWrongBook()">
+          <div class="menu-icon">📖</div>
+          <div class="menu-info">
+            <div class="menu-title">错题本</div>
+            <div class="menu-desc">复习做错的题目</div>
+          </div>
+          <div class="menu-arrow">›</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 章节选择 -->
+    <div id="page-chapters" class="page">
+      <div class="topbar">
+        <button class="back-btn" onclick="showPage('home')">‹ 返回</button>
+        <span class="topbar-title">选择章节</span>
+        <span class="topbar-right"></span>
+      </div>
+      <div class="chapter-list" id="chapter-list"></div>
+    </div>
+
+    <!-- 做题页面 -->
+    <div id="page-quiz" class="page">
+      <div class="topbar">
+        <button class="back-btn" onclick="confirmQuit()">‹ 退出</button>
+        <span class="topbar-title" id="quiz-title">练习</span>
+        <span class="topbar-right" id="quiz-timer"></span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div class="quiz-info">
+        <span id="quiz-current">1</span>/<span id="quiz-total">0</span>
+        <span id="quiz-score" class="score-tag"></span>
+      </div>
+      <div class="question-card" id="question-card">
+        <div class="question-type" id="question-type"></div>
+        <div class="question-text" id="question-text"></div>
+        <div class="options-list" id="options-list"></div>
+      </div>
+      <div class="quiz-nav">
+        <button class="btn btn-outline" id="btn-prev" onclick="prevQuestion()">上一题</button>
+        <button class="btn btn-primary" id="btn-next" onclick="nextQuestion()">下一题</button>
+        <button class="btn btn-success" id="btn-submit" onclick="submitQuiz()" style="display:none">提交</button>
+      </div>
+    </div>
+
+    <!-- 结果页面 -->
+    <div id="page-result" class="page">
+      <div class="topbar">
+        <button class="back-btn" onclick="showPage('home')">‹ 返回首页</button>
+        <span class="topbar-title">答题结果</span>
+        <span class="topbar-right"></span>
+      </div>
+      <div class="result-card">
+        <div class="result-score" id="result-score">0</div>
+        <div class="result-label">总分</div>
+        <div class="result-detail">
+          <div class="result-item">
+            <span class="result-num correct" id="result-correct">0</span>
+            <span class="result-text">答对</span>
+          </div>
+          <div class="result-item">
+            <span class="result-num wrong" id="result-wrong">0</span>
+            <span class="result-text">答错</span>
+          </div>
+          <div class="result-item">
+            <span class="result-num" id="result-time">0:00</span>
+            <span class="result-text">用时</span>
+          </div>
+        </div>
+      </div>
+      <div class="section-title">薄弱知识点</div>
+      <div class="weak-list" id="weak-list"></div>
+      <div class="section-title">错题回顾</div>
+      <div class="wrong-list" id="wrong-list"></div>
+      <div class="result-actions">
+        <button class="btn btn-outline" onclick="showPage('home')">返回首页</button>
+        <button class="btn btn-primary" onclick="redoWrong()">重做错题</button>
+      </div>
+    </div>
+
+    <!-- 错题本 -->
+    <div id="page-wrong" class="page">
+      <div class="topbar">
+        <button class="back-btn" onclick="showPage('home')">‹ 返回</button>
+        <span class="topbar-title">错题本</span>
+        <span class="topbar-right" id="wrong-count"></span>
+      </div>
+      <div class="wrong-filter">
+        <button class="filter-btn active" onclick="filterWrong('all', this)">全部</button>
+        <div class="filter-chapters" id="wrong-chapters"></div>
+      </div>
+      <div class="wrong-book-list" id="wrong-book-list"></div>
+      <div class="wrong-actions" id="wrong-actions">
+        <button class="btn btn-primary" onclick="redoAllWrong()">重做全部错题</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="data/questions.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
